@@ -23,6 +23,7 @@ custom:
 functions:
   give-me:
     handler: functions/handler.scrap
+    timeout: 20
     events:
       - http:
           path: scrap
