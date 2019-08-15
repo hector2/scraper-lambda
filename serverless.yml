@@ -7,9 +7,6 @@ provider:
   region: eu-west-3
   stage: dev
 
-  apiGateway:
-    binaryMediaTypes:
-      - "application/pdf"
 plugins:
   - serverless-webpack
   - serverless-offline
@@ -24,10 +21,10 @@ custom:
     location: .webpack/service
 
 functions:
-  give-me-the-pdf:
-    handler: functions/pdf.generate
+  give-me:
+    handler: functions/handler.scrap
     events:
       - http:
-          path: puppeteer/pdf
+          path: scrap
           method: get
           cors: true
