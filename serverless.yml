@@ -1,0 +1,33 @@
+service: scraper-lambda
+
+provider:
+  name: aws
+  versionFunctions: false
+  runtime: nodejs8.10
+  region: eu-west-3
+  stage: dev
+
+  apiGateway:
+    binaryMediaTypes:
+      - "application/pdf"
+plugins:
+  - serverless-webpack
+  - serverless-offline
+
+custom:
+  webpack:
+    webpackConfig: webpack.config.js
+    includeModules: true
+    packager: "yarn"
+
+  serverless-offline:
+    location: .webpack/service
+
+functions:
+  give-me-the-pdf:
+    handler: functions/pdf.generate
+    events:
+      - http:
+          path: puppeteer/pdf
+          method: get
+          cors: true
