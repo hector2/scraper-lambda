@@ -8,8 +8,17 @@ import {
   cors,
   doNotWaitForEmptyEventLoop,
   httpHeaderNormalizer,
-  httpErrorHandler
+  httpErrorHandler,
+  jsonBodyParser,
+  validator
 } from "middy/middlewares";
+
+const FAIL_LOGIN_ERR = "login incorrecto"
+
+interface IResponse {
+  statusCode: number,
+  content: string | IMovement[]
+}
 
 const handler = async (event: any) => {
   const executablePath = event.isOffline
@@ -23,23 +32,10 @@ const handler = async (event: any) => {
 
 
 
-  /*
-    const page = await browser.newPage();
-  
-    await page.goto("https://www.google.com", {
-      waitUntil: ["networkidle0", "load", "domcontentloaded"]
-    });
-  
-    const title = await page.title();
-  
-    return {
-      statusCode: 200,
-      body: JSON.stringify({title: title})
-    };
-  */
+
 
   const hrstart = process.hrtime()
-  const result = await getResult(browser)
+  const result = await getResult(browser, event.body.username, event.body.password)
   const hrend = process.hrtime(hrstart)
 
 
@@ -51,12 +47,11 @@ const handler = async (event: any) => {
     hrend[1] / 1000000
   )
 
-  console.log(result)
   //ws.send(JSON.stringify({ result: enc.toString('hex') }))
 
 
   return {
-    statusCode: 200,
+    statusCode: result.statusCode,
     headers: {
       "Content-type": "application/json"
     },
@@ -82,19 +77,19 @@ const separator = '|||'
 function removeDuplicates(coll: IMovement[]) {
   const result = new Map<string, IMovement>()
   for (const i of coll) {
-      const temp = result.get(i.id)
+    const temp = result.get(i.id)
 
-      if (temp) {
-          temp.amount = temp.amount + i.amount
-      } else if (i.date && i.concept && i.amount) {
-          result.set(i.id, i)
-      }
+    if (temp) {
+      temp.amount = temp.amount + i.amount
+    } else if (i.date && i.concept && i.amount) {
+      result.set(i.id, i)
+    }
   }
 
   const resultArr = []
 
   for (const j of result.values()) {
-      resultArr.push(j)
+    resultArr.push(j)
   }
 
   return resultArr
@@ -104,17 +99,17 @@ function scrapLine(line: string): IMovement {
   const parts: string[] = line.split(separator)
 
   if (parts[2]) {
-      parts[2] = parts[2].replace(',', '.')
+    parts[2] = parts[2].replace(',', '.')
   }
 
   const result: IMovement = {
-      id: crypto
-          .createHash('sha256')
-          .update(JSON.stringify(parts))
-          .digest('hex'),
-      date: parts[0],
-      concept: parts[1],
-      amount: parseFloat(parts[2]),
+    id: crypto
+      .createHash('sha256')
+      .update(JSON.stringify(parts))
+      .digest('hex'),
+    date: parts[0],
+    concept: parts[1],
+    amount: parseFloat(parts[2]),
   }
   return result
 }
@@ -141,7 +136,7 @@ function waitForFrame(
   }
 }
 
-async function getResult(browser: Browser) {
+async function getResult(browser: Browser, username: string, password: string): Promise<IResponse> {
   try {
     const page = await browser.newPage()
 
@@ -158,10 +153,14 @@ async function getResult(browser: Browser) {
       'https://www.cajamar.es/es/comun/acceder-a-banca-electronica-reintentar/'
     )
     await page.setViewport({ width: 1920, height: 1080 })
-    await page.type('#COD_NEW3', process.env.USER)
-    await page.type('#PASS_NEW3', process.env.PASS)
+    await page.type('#COD_NEW3', username)
+    await page.type('#PASS_NEW3', password)
     await page.click('.lnkAceptar')
-    await page.waitFor('#principaln1_cuentas')
+    try {
+      await page.waitFor('#principaln1_cuentas', { timeout: 7000 })
+    } catch (e) {
+      throw FAIL_LOGIN_ERR
+    }
     //ws.send('10%')
     await page.click('#principaln1_cuentas')
     //ws.send('20%')
@@ -226,7 +225,15 @@ async function getResult(browser: Browser) {
 
     //ws.send('100%')
 
-    return removeDuplicates(resFinal)
+    return {statusCode: 200, content: removeDuplicates(resFinal)}
+  } catch (e) {
+    console.log("error while scraping", e)
+    if (e === FAIL_LOGIN_ERR) {
+      return {statusCode: 401, content: "Fail login"}
+    } else {
+      return {statusCode: 500, content: "Internal error"}
+    }
+
   } finally {
     console.log('cerrando browser')
     await browser.close()
@@ -234,11 +241,26 @@ async function getResult(browser: Browser) {
 }
 
 
+const inputSchema = {
+  type: 'object',
+  properties: {
+    body: {
+      type: 'object',
+      properties: {
+        username: { type: 'string', minLength: 1 },
+        password: { type: 'string', minLength: 1 }
+      },
+      required: ['username', 'password'] // Insert here all required event properties
+    }
+  }
+}
 
 
 
 
 export const scrap = middy(handler)
+  .use(jsonBodyParser()) // parses the request body when it's a JSON and converts it to an object
+  .use(validator({ inputSchema })) // validates the input
   .use(httpHeaderNormalizer())
   .use(cors())
   .use(doNotWaitForEmptyEventLoop())

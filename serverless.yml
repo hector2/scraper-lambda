@@ -24,8 +24,9 @@ functions:
   give-me:
     handler: functions/handler.scrap
     timeout: 20
+    memorySize: 1536
     events:
       - http:
           path: scrap
-          method: get
+          method: post
           cors: true
